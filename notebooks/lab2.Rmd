@@ -1,0 +1,31 @@
+---
+title: "Lab 2: Park Mobility and Covid-19 Cases"
+author: 'w203: Statistics for Data Science'
+date: "3/31/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(patchwork)
+library(car)
+library(lmtest)
+library(sandwich)
+library(stargazer)
+```
+```{r}
+cdc_death_data <- read.csv("~/lab2_groupRepo/United_States_COVID-19_Cases_and_Deaths_by_State_over_Time.csv")
+cdc_death_data
+```
+```{r}
+mobility_data_2021 <- read.csv("~/lab2_groupRepo/2021_US_Region_Mobility_Report.csv")
+mobility_data_2021
+```
+```{r}
+mobility_data_2020 <- read.csv("~/lab2_groupRepo/2021_US_Region_Mobility_Report.csv")
+mobility_data_2020
+```
+
