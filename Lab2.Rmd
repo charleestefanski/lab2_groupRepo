@@ -1,0 +1,45 @@
+---
+title: "Lab2"
+author: "Chetan Munugala and Charlee Stefanski"
+date: "3/28/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(tidyverse)
+
+covid_now = read.csv('states.timeseries.csv')
+covid_now = covid_now[c('date','state','metrics.testPositivityRatio')]
+
+covid_now$date <- as.Date(covid_now$date)
+covid_now = covid_now[(covid_now$date >= "2021-01-01" & covid_now$date <= "2021-03-21"), ]
+
+mobility = read.csv('2021_US_Region_Mobility_Report.csv',na.strings=c("","NA")) 
+#there were some blanks turned them to NA's
+
+
+mobility <- mobility[!is.na(mobility$iso_3166_2_code),]
+mobility$iso_3166_2_code <- lapply(mobility$iso_3166_2_code, function(x) gsub("US-", "", x))
+#dropped US- before state code to match other data set we are combining with
+
+mobility = rename(mobility, state = iso_3166_2_code, retail_mobility = retail_and_recreation_percent_change_from_baseline, grocery_mobility = grocery_and_pharmacy_percent_change_from_baseline, park_mobility = parks_percent_change_from_baseline, transit_mobility = transit_stations_percent_change_from_baseline, workplace_mobility = workplaces_percent_change_from_baseline, residential_mobility = residential_percent_change_from_baseline )
+#renamed columns something more sensible
+
+mobility = mobility[c('date','state','retail_mobility', 'grocery_mobility', 'park_mobility', 'transit_mobility', 'workplace_mobility', 'residential_mobility')]
+#selecting the columns from mobility data frame that I want in final dataframe
+
+
+cleaned_df = merge(covid_now, mobility, by=c("date","state"), all = TRUE)
+cleaned_df = arrange(cleaned_df, state, date)
+cleaned_df = rename(cleaned_df, positivity_rate = metrics.testPositivityRatio)
+#merged dataframes and renamed positivity rate column
+
+#AT THIS POINT WE HAVE A CLEANED_DF WITH ALL THE VARIABLES WE NEED. WE HAVE A TOTAL OF 53 DIFFERENT STATES BECAUSE THEY HAVE INCLUDED PUERTO RICO (PR), NORTHERN MARIANAS (MP), AND DISTRICT OF COLUMBIA (DC). 
+
+
+```
