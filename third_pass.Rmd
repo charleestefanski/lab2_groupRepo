@@ -1,0 +1,86 @@
+---
+title: "Lab2"
+author: "Chetan Munugala and Charlee Stefanski"
+date: "3/28/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+library(dplyr)
+library(tidyverse)
+
+covid_now = read.csv('states.timeseries.csv')
+covid_now = covid_now[c('date','state','metrics.testPositivityRatio')]
+
+covid_now$date <- as.Date(covid_now$date)
+
+cdc = read.csv('United_States_COVID-19_Cases_and_Deaths_by_State_over_Time.csv')
+cdc = rename(cdc, date = submission_date)
+cdc$date <- as.Date(cdc$date, "%m/%d/%Y")
+cdc = arrange(cdc,state,date)
+cdc = cdc[c('date','state','new_case')]
+
+
+
+```
+```{r}
+#read blanks as NAs
+mobility2020 = read.csv('2020_US_Region_Mobility_Report.csv',na.strings=c("","NA"))
+mobility2021 = read.csv('2021_US_Region_Mobility_Report.csv',na.strings=c("","NA"))
+
+#combine 2020 and 2021 mobility data
+mobility <- rbind(mobility2020, mobility2021)
+
+#drop US- before state code to match other data set we are combining with
+mobility <- mobility[!is.na(mobility$iso_3166_2_code),]
+mobility$iso_3166_2_code <- lapply(mobility$iso_3166_2_code, function(x) gsub("US-", "", x))
+
+#rename columns for readability
+mobility = rename(mobility, state = iso_3166_2_code, retail_mobility = retail_and_recreation_percent_change_from_baseline, grocery_mobility = grocery_and_pharmacy_percent_change_from_baseline, park_mobility = parks_percent_change_from_baseline, transit_mobility = transit_stations_percent_change_from_baseline, workplace_mobility = workplaces_percent_change_from_baseline, residential_mobility = residential_percent_change_from_baseline)
+
+#select necessary columns
+mobility = mobility[c('date','state','retail_mobility', 'grocery_mobility', 'park_mobility', 'transit_mobility', 'workplace_mobility', 'residential_mobility')]
+```
+```{r}
+#filter by date range
+covid_now = covid_now[(covid_now$date >= "2020-03-01" & covid_now$date <= "2021-03-20"), ]
+mobility = mobility[(mobility$date >= "2020-03-01" & mobility$date <= "2021-03-20"), ]
+cdc = cdc[(cdc$date >= "2020-03-01" & cdc$date <= "2021-03-20"), ]
+
+```
+
+```{r}
+#transform back to dataframe
+mobility_df <- as.data.frame(lapply(mobility, unlist))
+covid_now_df <- as.data.frame(lapply(covid_now, unlist))
+cdc_df <- as.data.frame(lapply(cdc, unlist))
+
+#Mmerge dataframes
+cleaned_df = merge(covid_now_df, mobility_df, by=c("date","state"), all = TRUE) %>% 
+  merge(cdc_df, by=c("date","state"), all=TRUE)
+cleaned_df = arrange(cleaned_df, state, date)
+#rename positivty rate column
+cleaned_df = rename(cleaned_df, positivity_rate = metrics.testPositivityRatio)
+cleaned_df <- cleaned_df[c(1,2,3,10,4,5,6,7,8,9)]
+
+#adding seven day index to aggregate data by week
+cleaned_df$seven_day_index <- c(0, rep(1:(nrow(cleaned_df)-1)%/%7))
+
+final_df = cleaned_df %>% group_by(seven_day_index, state) %>%
+  summarise(mean_pos_rate = mean(positivity_rate), 
+            new_cases = sum(new_case),
+            mean_retail_mobility = mean(retail_mobility),
+            mean_grocery_mobility = mean(grocery_mobility),
+            mean_park_mobility = mean(park_mobility),
+            mean_transit_mobility = mean(transit_mobility),
+            mean_workplace_moobility = mean(workplace_mobility),
+            mean_residential_mobility = mean(residential_mobility))
+
+#AT THIS POINT WE HAVE A FINAL_DF WITH ALL THE VARIABLES WE NEED. WE HAVE A TOTAL OF 53 DIFFERENT STATES BECAUSE THEY HAVE INCLUDED PUERTO RICO (PR), NORTHERN MARIANAS (MP), AND DISTRICT OF COLUMBIA (DC). 
+```
+
+
+
