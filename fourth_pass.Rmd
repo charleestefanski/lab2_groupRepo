@@ -1,0 +1,221 @@
+---
+title: "Lab2"
+author: "Chetan Munugala and Charlee Stefanski"
+date: "3/28/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Introduction
+
+Since the beginning of the COVID-19-induced quarantine in March of 2020, the public has been told to stay home and avoid social gatherings. While this was beneficial for reducing the spread of the virus, many suffered from loneliness due to the isolation, and rates of depression increased throughout the quarantine. In the research article titled ‘Prevalence of Depression Symptoms in US Adults Before and During the COVID-19 Pandemic’, Ettman and colleagues highlight this issue precisely (https://jamanetwork.com/journals/jamanetworkopen/fullarticle/2770146). It is widely accepted that time spent outdoors in nature tends to reduce stress, anxiety, and depression. If park mobility was not a cause for increases in COVID-19 cases, it could be argued that park access (including national parks and beaches) should have remained open and would have increased the well being of the Americans. 
+
+In this study, we look to answer the question -  **Does an increase in park mobility cause an increase in the number of new covid cases?** 
+
+
+
+# Data Cleaning
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message = F, warning = F, fig.width = 12,fig.height = 4)
+```
+```{r}
+library(dplyr)
+library(tidyverse)
+library(usdata)
+
+covid_now = read.csv('states.timeseries.csv')
+covid_now = covid_now[c('date','state','metrics.testPositivityRatio')]
+
+covid_now$date <- as.Date(covid_now$date)
+
+cdc = read.csv('United_States_COVID-19_Cases_and_Deaths_by_State_over_Time.csv')
+cdc = rename(cdc, date = submission_date)
+cdc$date <- as.Date(cdc$date, "%m/%d/%Y")
+cdc = arrange(cdc,state,date)
+cdc = cdc[c('date','state','new_case')]
+
+pop = read.csv('populationnumbers.csv')
+pop = pop[c(2,9:51,61),]
+colnames(pop) <- as.character(unlist(pop[1,]))
+pop = pop[-1, ]
+pop = pop[,1:2]
+pop <- as.data.frame(pop)
+pop$`Geographic Area` <- gsub("\\.", "", pop$`Geographic Area`)
+pop$`Geographic Area` <- lapply(pop$`Geographic Area`, state2abbr)
+rownames(pop) = 1:nrow(pop)
+pop$`Geographic Area`[44] <- "PR"
+pop <- rename(pop, state = "Geographic Area", total_pop = "Total Resident\nPopulation")
+
+#read blanks as NAs
+mobility2020 = read.csv('2020_US_Region_Mobility_Report.csv',na.strings=c("","NA"))
+mobility2021 = read.csv('2021_US_Region_Mobility_Report.csv',na.strings=c("","NA"))
+
+#combine 2020 and 2021 mobility data
+mobility <- rbind(mobility2020, mobility2021)
+
+#drop US- before state code to match other data set we are combining with
+mobility <- mobility[!is.na(mobility$iso_3166_2_code),]
+mobility$iso_3166_2_code <- lapply(mobility$iso_3166_2_code, function(x) gsub("US-", "", x))
+
+#rename columns for readability
+mobility = rename(mobility, state = iso_3166_2_code, retail_mobility = retail_and_recreation_percent_change_from_baseline, grocery_mobility = grocery_and_pharmacy_percent_change_from_baseline, park_mobility = parks_percent_change_from_baseline, transit_mobility = transit_stations_percent_change_from_baseline, workplace_mobility = workplaces_percent_change_from_baseline, residential_mobility = residential_percent_change_from_baseline)
+
+#select necessary columns
+mobility = mobility[c('date','state','retail_mobility', 'grocery_mobility', 'park_mobility', 'transit_mobility', 'workplace_mobility', 'residential_mobility')]
+
+#filter by date range
+covid_now = covid_now[(covid_now$date >= "2020-03-01" & covid_now$date <= "2021-03-20"), ]
+mobility = mobility[(mobility$date >= "2020-03-01" & mobility$date <= "2021-03-20"), ]
+cdc = cdc[(cdc$date >= "2020-03-01" & cdc$date <= "2021-03-20"), ]
+
+#transform back to dataframe
+mobility_df <- as.data.frame(lapply(mobility, unlist))
+covid_now_df <- as.data.frame(lapply(covid_now, unlist))
+cdc_df <- as.data.frame(lapply(cdc, unlist))
+
+#Mmerge dataframes
+cleaned_df = merge(covid_now_df, mobility_df, by=c("date","state"), all = TRUE) %>% 
+  merge(cdc_df, by=c("date","state"), all=TRUE) 
+
+cleaned_df = arrange(cleaned_df, state, date)
+#rename positivty rate column
+cleaned_df = rename(cleaned_df, positivity_rate = metrics.testPositivityRatio)
+cleaned_df <- cleaned_df[c(1,2,3,10,4,5,6,7,8,9)]
+
+#adding seven day index to aggregate data by week
+
+
+highpopulation_df <- cleaned_df[cleaned_df$state == c("CA","TX","FL"),]
+highpopulation_df$seven_day_index <- c(0, rep(1:(nrow(highpopulation_df)-1)%/%7))
+
+lowpopulation_df <- cleaned_df[cleaned_df$state == c("WY","VT","AL"),]
+lowpopulation_df$seven_day_index <- c(0, rep(1:(nrow(lowpopulation_df)-1)%/%7))
+
+
+
+cleaned_df$seven_day_index <- c(0, rep(1:(nrow(cleaned_df)-1)%/%7))
+
+
+hp_final_df = highpopulation_df %>% group_by(seven_day_index, state) %>%
+  summarise(mean_pos_rate = mean(positivity_rate), 
+            new_cases = sum(new_case),
+            mean_retail_mobility = mean(retail_mobility),
+            mean_grocery_mobility = mean(grocery_mobility),
+            mean_park_mobility = mean(park_mobility),
+            mean_transit_mobility = mean(transit_mobility),
+            mean_workplace_mobility = mean(workplace_mobility),
+            mean_residential_mobility = mean(residential_mobility))
+
+lp_final_df = lowpopulation_df %>% group_by(seven_day_index, state) %>%
+  summarise(mean_pos_rate = mean(positivity_rate), 
+            new_cases = sum(new_case),
+            mean_retail_mobility = mean(retail_mobility),
+            mean_grocery_mobility = mean(grocery_mobility),
+            mean_park_mobility = mean(park_mobility),
+            mean_transit_mobility = mean(transit_mobility),
+            mean_workplace_mobility = mean(workplace_mobility),
+            mean_residential_mobility = mean(residential_mobility))
+
+final_df = cleaned_df %>% group_by(seven_day_index, state) %>%
+  summarise(mean_pos_rate = mean(positivity_rate), 
+            new_cases = sum(new_case),
+            mean_retail_mobility = mean(retail_mobility),
+            mean_grocery_mobility = mean(grocery_mobility),
+            mean_park_mobility = mean(park_mobility),
+            mean_transit_mobility = mean(transit_mobility),
+            mean_workplace_mobility = mean(workplace_mobility),
+            mean_residential_mobility = mean(residential_mobility))
+
+
+pop$state <- as.character(pop$state)
+final_df = left_join(final_df, pop)
+class(final_df$total_pop)
+final_df$total_pop <- as.numeric(gsub("\\,","",final_df$total_pop))
+
+
+
+#AT THIS POINT WE HAVE A FINAL_DF WITH ALL THE VARIABLES WE NEED. WE HAVE A TOTAL OF 53 DIFFERENT STATES BECAUSE THEY HAVE INCLUDED PUERTO RICO (PR), NORTHERN MARIANAS (MP), AND DISTRICT OF COLUMBIA (DC). 
+```
+
+# Pre-Modeling Exploratory Data Analysis
+
+```{r}
+library(ggplot2)
+library(patchwork)
+library(purrr)
+
+
+final_df %>%
+  keep(is.numeric) %>% 
+  gather() %>% 
+  ggplot(aes(value)) +
+    facet_wrap(~ key, scales = "free") +
+    geom_histogram(fill = 'deepskyblue4')
+```
+
+```{r}
+plot1 = ggplot(data=final_df) + 
+  aes(x = log(total_pop)) +
+  geom_histogram(fill='deepskyblue4')
+
+plot2 = ggplot(data=final_df) + 
+  aes(x = log(new_cases)) +
+  geom_histogram(fill='deepskyblue4')
+
+plot1 | plot2
+
+```
+
+
+# Linear Models
+
+```{r}
+library(lmtest)
+library(sandwich)
+
+final_df$log_pop = log(final_df$total_pop)
+
+
+model1 = lm(new_cases ~ mean_park_mobility, data=final_df)
+coeftest(model1, vcov=vcovHC)
+```
+
+```{r}
+model2 = lm(new_cases ~ mean_park_mobility + total_pop, data=final_df)
+coeftest(model2, vcov=vcovHC)
+```
+
+```{r}
+model3 = lm(new_cases ~ mean_park_mobility + mean_residential_mobility + mean_transit_mobility + mean_workplace_mobility + mean_grocery_mobility + mean_retail_mobility, data=final_df)
+coeftest(model3, vcov=vcovHC)
+```
+
+```{r}
+model4 = lm(new_cases ~ mean_park_mobility + mean_residential_mobility + mean_transit_mobility + mean_workplace_mobility + mean_grocery_mobility + mean_retail_mobility + total_pop, data=final_df)
+coeftest(model4, vcov=vcovHC)
+```
+
+
+```{r}
+library(stargazer)
+stargazer(model1, model2, model3, model4, title="Results", align=TRUE, type="text")
+```
+
+# 4. Limitations of your Model 
+
+As a team, evaluate all of the CLM assumptions that must hold for your model. However, do not report an exhaustive examination all 5 CLM assumption. Instead, bring forward only those assumptions that you think pose significant problems for your analysis. For each problem that you identify, describe the statistical consequences. If you are able to identify any strategies to mitigate the consequences, explain these strategies. 
+
+Note that you may need to change your model specifications in response to violations of the CLM. 
+
+# 5. Discussion of Omitted Variables
+
+If the team has taken up an explanatory (i.e. causal) question to evaluate, then identify what you think are the 5 most important *omitted variables* that bias results you care about. For each variable, you should *reason about the direction of bias* caused by omitting this variable. If you can argue whether the bias is large or small, that is even better. State whether you have any variables available that may proxy (even imperfectly) for the omitted variable. Pay particular attention to whether each omitted variable bias is *towards zero or away from zero*. You will use this information to judge whether the effects you find are likely to be real, or whether they might be entirely an artifact of omitted variable bias.
+
+# 6. Conclusion
+
+Make sure that you end your report with a discussion that distills key insights from your estimates and addresses your research question.
+
+
